@@ -15,7 +15,12 @@ import requests
 # 1225 = Wind Offshore
 # 4071 = Erdgas (natural gas)
 # 1223 = Braunkohle (lignite)
-FILTER_SOLAR = 4068
+#ILTER_SOLAR = 4068
+SOURCES = {
+    "Solar": 4068,
+    "Wind Onshore": 4067,
+}
+
 
 REGION = "DE"
 RESOLUTION = "hour"
@@ -81,26 +86,28 @@ def format_row(row: list) -> str:
 
 
 def main() -> None:
-    timestamps = get_available_timestamps(FILTER_SOLAR, REGION, RESOLUTION)
-    print(f"\nSMARD offers {len(timestamps)} weekly files.")
+    for name, filter_id in SOURCES.items():
 
-    # The last one is the most recent week, i.e. the freshest data.
-    latest = timestamps[-1]
-    print(f"Newest file starts at {datetime.fromtimestamp(latest / 1000, tz=timezone.utc)}\n")
+        timestamps = get_available_timestamps(filter_id, REGION, RESOLUTION)
+        print(f"\nSMARD offers {len(timestamps)} weekly files.")
 
-    series = get_timeseries(FILTER_SOLAR, REGION, RESOLUTION, latest)
+        # The last one is the most recent week, i.e. the freshest data.
+        latest = timestamps[-1]
+        print(f"Newest file starts at {datetime.fromtimestamp(latest / 1000, tz=timezone.utc)}\n")
 
-    null_count = sum(1 for _, value in series if value is None)
-    print(f"\nGot {len(series)} data points, of which {null_count} are NULL.")
-    print("NULLs are hours SMARD has not reported yet — normal, not a bug.\n")
+        series = get_timeseries(filter_id, REGION, RESOLUTION, latest)
 
-    print("--- first 3 ---")
-    for row in series[:3]:
-        print(format_row(row))
+        null_count = sum(1 for _, value in series if value is None)
+        print(f"\nGot {len(series)} data points, of which {null_count} are NULL.")
+        print("NULLs are hours SMARD has not reported yet — normal, not a bug.\n")
 
-    print("\n--- last 3 ---")
-    for row in series[-3:]:
-        print(format_row(row))
+        print("--- first 3 ---")
+        for row in series[:3]:
+            print(format_row(row))
+
+        print("\n--- last 3 ---")
+        for row in series[-3:]:
+            print(format_row(row))
 
 
 if __name__ == "__main__":
