@@ -1,26 +1,23 @@
 """
 Fetch German electricity generation data from SMARD (Bundesnetzagentur).
 
-Step 1 of the pipeline: just get data out of the API and look at it.
-No database, no cloud, no Docker yet.
+Step 2 of the pipeline: fetch several sources, turn the raw API response
+into clean rows, and write them to a CSV file.
+
+Still no database, no cloud, no Docker.
 """
 
+import csv
 from datetime import datetime, timezone
 
 import requests
 
 # SMARD filter IDs — each one is a generation source.
-# 4068 = Photovoltaik (solar)
-# 4067 = Wind Onshore
-# 1225 = Wind Offshore
-# 4071 = Erdgas (natural gas)
-# 1223 = Braunkohle (lignite)
-#ILTER_SOLAR = 4068
+# 1225 = Wind Offshore, 4071 = Erdgas, 1223 = Braunkohle (add later if you want)
 SOURCES = {
     "Solar": 4068,
     "Wind Onshore": 4067,
 }
-
 
 REGION = "DE"
 RESOLUTION = "hour"
@@ -30,6 +27,12 @@ BASE_URL = "https://www.smard.de/app/chart_data"
 # Always set a timeout. A request without one can hang forever,
 # which in a scheduled pipeline means a job that never finishes.
 TIMEOUT_SECONDS = 30
+
+OUTPUT_FILE = "generation.csv"
+
+# The column order of the output file. Defining it in one place means
+# to_rows() and the CSV writer can never drift apart.
+FIELDNAMES = ["source", "timestamp_utc", "value_mwh"]
 
 
 def get_available_timestamps(filter_id: int, region: str, resolution: str) -> list[int]:
@@ -73,41 +76,79 @@ def get_timeseries(
     return payload["series"]
 
 
-def format_row(row: list) -> str:
-    """Turn one [timestamp_ms, value] pair into something a human can read."""
-    timestamp_ms, value = row
+def to_rows(name: str, series: list[list]) -> list[dict]:
+    """
+    Convert one source's raw [timestamp_ms, value] pairs into clean rows.
 
-    # SMARD gives MILLISECONDS since 1970. Python's fromtimestamp expects
-    # SECONDS. Forget the division by 1000 and every date lands in 1970.
-    moment = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+    Output is LONG format: one row per source per hour. Adding a third
+    source later means more rows, not a schema change.
 
-    readable_value = "NULL" if value is None else f"{value:,.0f} MWh"
-    return f"{moment:%Y-%m-%d %H:%M} UTC   {readable_value}"
+    DECISION — NULLs are dropped, not stored.
+    A NULL here means "SMARD has not reported this hour yet", which is not
+    the same as "zero electricity was generated". Writing it would create a
+    row that has to be corrected on a later run. Dropping it means tomorrow's
+    run simply adds the hours that have since been reported, and every row in
+    the file is always a real measurement. The cost: the file alone cannot
+    tell you whether an hour is missing because it lies in the future or
+    because the pipeline failed. Acceptable for now, revisit at the DB stage.
+    """
+    rows = []
+
+    for timestamp_ms, value in series:
+        if value is None:
+            continue
+
+        # SMARD gives MILLISECONDS since 1970. Python expects SECONDS.
+        # Forget the division by 1000 and every date lands in 1970.
+        moment = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+
+        rows.append(
+            {
+                "source": name,
+                "timestamp_utc": moment.strftime("%Y-%m-%d %H:%M:%S"),
+                "value_mwh": float(value),
+            }
+        )
+
+    return rows
+
+
+def write_csv(rows: list[dict], path: str) -> None:
+    """
+    Write rows to a CSV file.
+
+    newline="" is required on Windows. Without it, Python and the csv module
+    each add a line ending and you get a blank line between every row.
+
+    encoding="utf-8" keeps German characters intact if you later add source
+    names like "Braunkohle" or any label with an umlaut.
+    """
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def main() -> None:
+    all_rows = []
+
     for name, filter_id in SOURCES.items():
+        print(f"\n===== {name} =====")
 
         timestamps = get_available_timestamps(filter_id, REGION, RESOLUTION)
-        print(f"\nSMARD offers {len(timestamps)} weekly files.")
 
         # The last one is the most recent week, i.e. the freshest data.
         latest = timestamps[-1]
-        print(f"Newest file starts at {datetime.fromtimestamp(latest / 1000, tz=timezone.utc)}\n")
-
         series = get_timeseries(filter_id, REGION, RESOLUTION, latest)
 
-        null_count = sum(1 for _, value in series if value is None)
-        print(f"\nGot {len(series)} data points, of which {null_count} are NULL.")
-        print("NULLs are hours SMARD has not reported yet — normal, not a bug.\n")
+        rows = to_rows(name, series)
+        dropped = len(series) - len(rows)
+        print(f"{len(rows)} usable rows, {dropped} unreported hours skipped")
 
-        print("--- first 3 ---")
-        for row in series[:3]:
-            print(format_row(row))
+        all_rows.extend(rows)
 
-        print("\n--- last 3 ---")
-        for row in series[-3:]:
-            print(format_row(row))
+    write_csv(all_rows, OUTPUT_FILE)
+    print(f"\nWrote {len(all_rows)} rows to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
