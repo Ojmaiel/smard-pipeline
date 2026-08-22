@@ -138,14 +138,12 @@ def main() -> None:
         timestamps = get_available_timestamps(filter_id, REGION, RESOLUTION)
 
         # The last one is the most recent week, i.e. the freshest data.
-        latest = timestamps[-1]
-        series = get_timeseries(filter_id, REGION, RESOLUTION, latest)
-
-        rows = to_rows(name, series)
-        dropped = len(series) - len(rows)
-        print(f"{len(rows)} usable rows, {dropped} unreported hours skipped")
-
-        all_rows.extend(rows)
+        for timestamp in timestamps[-2:]:
+            series = get_timeseries(filter_id, REGION, RESOLUTION, timestamp)
+            rows = to_rows(name, series)
+            all_rows.extend(rows)
+            dropped = len(series) - len(rows)
+            print(f"{len(rows)} usable rows, {dropped} unreported hours skipped")
 
     write_csv(all_rows, OUTPUT_FILE)
     print(f"\nWrote {len(all_rows)} rows to {OUTPUT_FILE}")
