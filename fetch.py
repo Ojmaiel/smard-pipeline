@@ -12,13 +12,15 @@ from datetime import datetime, timezone
 
 import requests
 
+import db
+
 # SMARD filter IDs — each one is a generation source.
 # 1225 = Wind Offshore, 4071 = Erdgas, 1223 = Braunkohle (add later if you want)
 SOURCES = {
     "Solar": 4068,
     "Wind Onshore": 4067,
 }
-
+WEEKS_TO_FETCH = 52
 REGION = "DE"
 RESOLUTION = "hour"
 
@@ -113,6 +115,35 @@ def to_rows(name: str, series: list[list]) -> list[dict]:
     return rows
 
 
+def deduplicate(rows: list[dict]) -> list[dict]:
+    """
+    Collapse rows sharing the same (source, timestamp_utc) key.
+
+    SMARD's weekly files should not overlap, so duplicates normally mean a bug
+    on this side rather than bad data upstream. They are still worth handling
+    explicitly: a duplicated week silently doubles a source's output, and
+    nothing about the resulting file looks wrong.
+
+    Last writer wins. Rows are fetched oldest week first, so if the same hour
+    ever did appear twice, the later fetch — carrying any upstream revision —
+    is the one kept.
+
+    Returns rows sorted by source, then time, so the output file is stable
+    between runs and diffable.
+    """
+    seen: dict[tuple[str, str], dict] = {}
+
+    for row in rows:
+        key = (row["source"], row["timestamp_utc"])
+        seen[key] = row
+
+    removed = len(rows) - len(seen)
+    if removed:
+        print(f"WARNING: dropped {removed} duplicate rows — check the fetch loop")
+
+    return sorted(seen.values(), key=lambda r: (r["source"], r["timestamp_utc"]))
+
+
 def write_csv(rows: list[dict], path: str) -> None:
     """
     Write rows to a CSV file.
@@ -134,19 +165,31 @@ def main() -> None:
 
     for name, filter_id in SOURCES.items():
         print(f"\n===== {name} =====")
-
         timestamps = get_available_timestamps(filter_id, REGION, RESOLUTION)
-
-        # The last one is the most recent week, i.e. the freshest data.
-        for timestamp in timestamps[-2:]:
+        for timestamp in timestamps[-WEEKS_TO_FETCH:]:
             series = get_timeseries(filter_id, REGION, RESOLUTION, timestamp)
             rows = to_rows(name, series)
+            print(f"  {len(rows)} usable rows, {len(series) - len(rows)} unreported hours skipped")
             all_rows.extend(rows)
-            dropped = len(series) - len(rows)
-            print(f"{len(rows)} usable rows, {dropped} unreported hours skipped")
 
-    write_csv(all_rows, OUTPUT_FILE)
-    print(f"\nWrote {len(all_rows)} rows to {OUTPUT_FILE}")
+    clean_rows = deduplicate(all_rows)
+
+    # CSV is now an export for humans, not the source of truth.
+    write_csv(clean_rows, OUTPUT_FILE)
+    print(f"\nExported {len(clean_rows)} rows to {OUTPUT_FILE}")
+
+    connection = db.connect()
+    result = db.upsert_rows(connection, clean_rows)
+    print(
+        f"Database: {result['inserted']} inserted, "
+        f"{result['updated']} updated, {result['total']} rows total"
+    )
+
+    print("\nPer source:")
+    for source, hours, first_hour, last_hour, avg_mwh in db.summary(connection):
+        print(f"  {source:<14} {hours:>5} hours  {first_hour} .. {last_hour}  avg {avg_mwh:,.0f} MWh")
+
+    connection.close()
 
 
 if __name__ == "__main__":

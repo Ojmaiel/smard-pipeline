@@ -1,3 +1,5 @@
 ﻿generation.csv
+generation.db
+__pycache__/
 .venv/
 .idea/
