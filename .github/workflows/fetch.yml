@@ -36,6 +36,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Tests run BEFORE the fetch. If the transformation logic is broken,
+      # the job stops here rather than writing corrupted data to the repo.
+      - name: Run tests
+        run: pytest -v
+
       - name: Fetch data
         run: python fetch.py
 
