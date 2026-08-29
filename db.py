@@ -6,10 +6,11 @@ code being right. The table declares a primary key, so the database itself
 refuses to hold the same (source, hour) twice — no matter what fetch.py does.
 """
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 
-DB_FILE = "generation.db"
+DB_FILE = os.environ.get("DB_PATH", "generation.db")
 
 # PRIMARY KEY (source, timestamp_utc) is the whole point of this file.
 # It is a composite key: neither column is unique alone, but together they

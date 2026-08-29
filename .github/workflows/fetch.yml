@@ -1,0 +1,61 @@
+name: Fetch SMARD data
+
+on:
+  # Manual trigger. Adding this from the start matters: without it you can
+  # only test by waiting for the schedule, which makes debugging miserable.
+  workflow_dispatch:
+
+  schedule:
+    # 05:40 UTC daily. Deliberately not on the hour — GitHub queues an
+    # enormous number of jobs at :00, and scheduled runs get delayed or
+    # dropped under load. Off-peak minutes are more reliable.
+    #
+    # Cron fields: minute hour day-of-month month day-of-week
+    - cron: "40 5 * * *"
+
+# The job pushes a commit back to the repo, which needs write access.
+# The default token is read-only, so this has to be granted explicitly.
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          # Caches pip downloads between runs so the install step is fast.
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch data
+        run: python fetch.py
+
+      - name: Show what was loaded
+        run: python analyze.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add generation.csv
+
+          # If the data has not changed, there is nothing to commit and
+          # `git commit` exits with an error, failing the whole job.
+          # Checking first turns "nothing changed" into a normal outcome
+          # rather than a false alarm.
+          if git diff --staged --quiet; then
+            echo "No change in the data — nothing to commit."
+          else
+            git commit -m "Data update: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
