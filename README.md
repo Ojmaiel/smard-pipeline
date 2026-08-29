@@ -1,5 +1,5 @@
 # SMARD Pipeline
-
+![Fetch SMARD data](https://github.com/Ojmaiel/smard-pipeline/actions/workflows/fetch.yml/badge.svg)
 Fetches hourly electricity generation data for Germany from
 [SMARD](https://www.smard.de), the Bundesnetzagentur's official electricity
 market data platform, loads it into SQLite, and reports on it.
