@@ -47,12 +47,15 @@ jobs:
       - name: Show what was loaded
         run: python analyze.py
 
+      - name: Generate charts
+        run: python chart.py
+
       - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add generation.csv
+          git add generation.csv daily_profile.png monthly_totals.png
 
           # If the data has not changed, there is nothing to commit and
           # `git commit` exits with an error, failing the whole job.
