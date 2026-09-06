@@ -91,8 +91,11 @@ key then makes duplicates structurally impossible regardless.
 
 ## Findings
 
-From 12 complete months of data:
+![Daily profile](daily_profile.png)
 
+![Monthly totals](monthly_totals.png)
+
+From 12 complete months of data:
 - **Solar swings roughly 8× across the year** — about 1.5 TWh in December
   against 12.0 TWh in July.
 - **Wind runs counter to it**, strongest in autumn and winter (13.7 TWh in
