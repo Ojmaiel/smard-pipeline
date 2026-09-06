@@ -91,11 +91,14 @@ key then makes duplicates structurally impossible regardless.
 
 ## Findings
 
+## Findings
+
 ![Daily profile](daily_profile.png)
 
 ![Monthly totals](monthly_totals.png)
 
 From 12 complete months of data:
+
 - **Solar swings roughly 8× across the year** — about 1.5 TWh in December
   against 12.0 TWh in July.
 - **Wind runs counter to it**, strongest in autumn and winter (13.7 TWh in
@@ -106,6 +109,7 @@ From 12 complete months of data:
   UTC+2 — a useful check that the timestamp handling is correct.
 - **Solar is exactly zero overnight.** Non-zero generation at 02:00 UTC would
   mean the filter ID or the timestamp conversion is wrong.
+
 
 ## Sanity checks
 
